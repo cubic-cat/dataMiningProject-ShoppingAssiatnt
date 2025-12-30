@@ -32,6 +32,9 @@ class ProductRecommendationAPI:
             product_data_path="/Users/afonsoyi/CodeBuddy/Shopping Assistant/data/product_data.csv"
         )
         
+        # 加载商品关联数据
+        self.category_associations = self._load_category_associations()
+        
         # 送礼对象选项
         self.gift_recipients = {
             "自己": "为自己购买",
@@ -39,6 +42,26 @@ class ProductRecommendationAPI:
             "对象": "送给恋人/伴侣",
             "父母": "送给父母"
         }
+    
+    def _load_category_associations(self) -> List[Dict]:
+        """
+        加载商品种类关联数据
+        
+        Returns:
+            关联数据列表
+        """
+        associations = []
+        associations_path = "/Users/afonsoyi/CodeBuddy/Shopping Assistant/data/category_associations.csv"
+        
+        try:
+            with open(associations_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                associations = list(reader)
+            print(f"✅ 成功加载 {len(associations)} 条商品种类关联数据")
+        except Exception as e:
+            print(f"⚠️ 加载关联数据失败: {e}")
+        
+        return associations
     
     def _get_budget_reference(self, user_id: int) -> Optional[float]:
         """
@@ -400,6 +423,169 @@ class ProductRecommendationAPI:
             print(f"获取价格范围失败: {e}")
             return {"min": 0, "max": 0, "avg": 0}
 
+    def get_smart_suggestions(self, user_id: int) -> Dict[str, Any]:
+        """
+        获取智能建议：基于用户购买习惯的两个建议
+        1. 用户最频繁购买的商品建议
+        2. 基于关联分析的商品种类推荐
+        
+        Args:
+            user_id: 用户ID
+            
+        Returns:
+            包含两个建议的字典
+        """
+        try:
+            # 获取用户购买习惯
+            user_habits = self.user_analyzer.analyze_user_habits(user_id)
+            if not user_habits:
+                return {
+                    "success": False,
+                    "error": f"用户 {user_id} 没有购买记录",
+                }
+            
+            suggestions = {
+                "success": True,
+                "user_id": user_id,
+                "suggestions": [],
+            }
+            
+            # 建议1: 最频繁购买的商品
+            frequent_suggestion = self._get_frequent_product_suggestion(user_habits)
+            if frequent_suggestion:
+                suggestions["suggestions"].append(frequent_suggestion)
+            
+            # 建议2: 基于关联分析的商品种类推荐
+            association_suggestion = self._get_association_suggestion(user_habits)
+            if association_suggestion:
+                suggestions["suggestions"].append(association_suggestion)
+            
+            return suggestions
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"生成智能建议时出错: {str(e)}",
+            }
+    
+    def _get_frequent_product_suggestion(self, user_habits: Dict) -> Optional[Dict]:
+        """
+        获取最频繁购买商品的建议
+        
+        Args:
+            user_habits: 用户购买习惯数据
+            
+        Returns:
+            频繁商品建议字典
+        """
+        try:
+            if 'frequent_products' not in user_habits or not user_habits['frequent_products']:
+                return None
+            
+            # 获取最频繁的商品
+            most_frequent = user_habits['frequent_products'][0]
+            product_id = most_frequent['product_id']
+            purchase_count = most_frequent['count']
+            
+            # 获取商品信息
+            product_info = None
+            if hasattr(self.user_analyzer, 'product_map') and product_id in self.user_analyzer.product_map:
+                category = self.user_analyzer.product_map[product_id]
+                product_info = {
+                    "product_id": product_id,
+                    "category": category,
+                    "purchase_count": purchase_count
+                }
+            
+            if product_info:
+                return {
+                    "type": "frequent_product",
+                    "title": "常购商品建议",
+                    "message": f"您经常购买{product_info['category']}类商品（商品ID: {product_id}），已购买{purchase_count}次。是否需要再次购买？",
+                    "product_info": product_info,
+                    "confidence": "高"
+                }
+            
+            return None
+            
+        except Exception as e:
+            print(f"生成频繁商品建议失败: {e}")
+            return None
+    
+    def _get_association_suggestion(self, user_habits: Dict) -> Optional[Dict]:
+        """
+        获取基于关联分析的商品种类推荐
+        
+        Args:
+            user_habits: 用户购买习惯数据
+            
+        Returns:
+            关联推荐建议字典
+        """
+        try:
+            if not self.category_associations or 'frequent_categories' not in user_habits:
+                return None
+            
+            # 获取用户常购买的商品种类
+            user_categories = set()
+            if user_habits['frequent_categories']:
+                for cat_info in user_habits['frequent_categories']:
+                    user_categories.add(cat_info['category'])
+            
+            if not user_categories:
+                return None
+            
+            # 在关联数据中查找相关推荐
+            best_association = None
+            best_support = 0
+            
+            for assoc in self.category_associations:
+                category_a = assoc['商品种类A']
+                category_b = assoc['商品种类B']
+                support = float(assoc['支持度'])
+                
+                # 检查用户是否购买过其中一种商品
+                recommended_category = None
+                if category_a in user_categories and category_b not in user_categories:
+                    recommended_category = category_b
+                elif category_b in user_categories and category_a not in user_categories:
+                    recommended_category = category_a
+                
+                # 如果找到推荐且支持度更高，更新最佳推荐
+                if recommended_category and support > best_support:
+                    best_support = support
+                    best_association = {
+                        "user_category": category_a if category_a in user_categories else category_b,
+                        "recommended_category": recommended_category,
+                        "support": support,
+                        "confidence_a_to_b": float(assoc['A→B置信度']),
+                        "confidence_b_to_a": float(assoc['B→A置信度']),
+                        "lift": float(assoc['提升度'])
+                    }
+            
+            if best_association:
+                max_confidence = max(best_association['confidence_a_to_b'], best_association['confidence_b_to_a'])
+                
+                return {
+                    "type": "association_recommendation",
+                    "title": "关联商品推荐",
+                    "message": f"基于您经常购买的{best_association['user_category']}，推荐您考虑购买{best_association['recommended_category']}类商品。",
+                    "association_info": {
+                        "user_category": best_association['user_category'],
+                        "recommended_category": best_association['recommended_category'],
+                        "support": best_association['support'],
+                        "confidence": max_confidence,
+                        "lift": best_association['lift']
+                    },
+                    "confidence": "中等" if max_confidence > 0.03 else "低"
+                }
+            
+            return None
+            
+        except Exception as e:
+            print(f"生成关联推荐失败: {e}")
+            return None
+
 
 # 便捷函数接口
 def recommend_products(user_id: int, budget: Optional[float] = None, 
@@ -437,6 +623,20 @@ def get_available_options() -> Dict[str, Any]:
     }
 
 
+def get_smart_suggestions(user_id: int) -> Dict[str, Any]:
+    """
+    便捷的智能建议函数
+    
+    Args:
+        user_id: 用户ID
+        
+    Returns:
+        智能建议结果
+    """
+    api = ProductRecommendationAPI()  # 使用默认API密钥
+    return api.get_smart_suggestions(user_id)
+
+
 if __name__ == "__main__":
     # 测试代码
     print("🎁 基于用户购物习惯的智能商品推荐API测试")
@@ -459,6 +659,26 @@ if __name__ == "__main__":
         print(f"  平均每单消费: ¥{user_summary['avg_order_amount']:.2f}")
     else:
         print(f"  {user_summary['error']}")
+    
+    print("\n🎯 测试智能建议功能:")
+    test_user_id = 25
+    api = ProductRecommendationAPI()
+    suggestions = api.get_smart_suggestions(test_user_id)
+    
+    print(f"\n用户 {test_user_id} 的智能建议:")
+    if suggestions.get("success"):
+        for i, suggestion in enumerate(suggestions.get("suggestions", []), 1):
+            print(f"\n建议 {i}: {suggestion['title']}")
+            print(f"  {suggestion['message']}")
+            print(f"  可信度: {suggestion['confidence']}")
+            if suggestion['type'] == 'frequent_product':
+                product_info = suggestion['product_info']
+                print(f"  商品信息: ID {product_info['product_id']}, 类别 {product_info['category']}, 购买次数 {product_info['purchase_count']}")
+            elif suggestion['type'] == 'association_recommendation':
+                assoc_info = suggestion['association_info']
+                print(f"  关联信息: 支持度 {assoc_info['support']:.4f}, 置信度 {assoc_info['confidence']:.4f}")
+    else:
+        print(f"  错误: {suggestions.get('error', '未知错误')}")
     
     print("\n注意: API密钥已配置，可以直接使用AI推荐功能")
     print("示例调用: recommend_products(user_id=25, requirement='圣诞礼物推荐')")
