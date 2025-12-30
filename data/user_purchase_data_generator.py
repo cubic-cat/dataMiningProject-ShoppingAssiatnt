@@ -6,8 +6,8 @@ from datetime import datetime, timedelta
 RECORD_COUNT = 50000  # 生成的记录数
 USER_ID_RANGE = (1, 100)  # 用户ID范围
 PRODUCT_ID_RANGE = (1001, 2000)  # 商品ID范围 (对应1000个商品)
-START_DATE = datetime(2024, 1, 1)  # 购买时间起始
-END_DATE = datetime(2024, 12, 31)  # 购买时间结束
+START_DATE = datetime(2025, 7, 1)  # 购买时间起始
+END_DATE = datetime(2026, 1, 31)  # 购买时间结束
 # 订单商品数量及对应权重
 PRODUCT_COUNT_OPTIONS = [1, 2, 3, 4, 5]
 PRODUCT_COUNT_WEIGHTS = [0.3, 0.25, 0.25, 0.15, 0.05]

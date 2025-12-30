@@ -43,7 +43,7 @@ class UserPurchaseAnalyzer:
         except Exception as e:
             print(f"❌ 数据加载失败: {e}")
     
-    def analyze_user_habits(self, user_id, start_date="2024-09-01", end_date="2024-12-31"):
+    def analyze_user_habits(self, user_id, start_date="2025-11-01", end_date="2026-1-31"):
         """
         分析指定用户的购买习惯
         
@@ -93,7 +93,7 @@ class UserPurchaseAnalyzer:
         product_counter = Counter(all_products)
         frequent_products = []
         for product_id, count in product_counter.most_common():
-            if count >= 4:  # 购买次数≥4才算频繁
+            if count >= 3:  # 购买次数≥3才算频繁
                 product_name = self.product_map.get(product_id, f"未知商品({product_id})")
                 frequent_products.append({
                     'product_id': product_id,
@@ -159,48 +159,6 @@ class UserPurchaseAnalyzer:
             'purchase_timeline': purchase_timeline
         }
     
-    def print_analysis_report(self, analysis_result):
-        """打印分析报告"""
-        if not analysis_result:
-            print("❌ 无分析结果可显示")
-            return
-        
-        print("\n" + "="*60)
-        print(f"🛍️  用户购买习惯分析报告")
-        print("="*60)
-        
-        print(f"👤 用户ID: {analysis_result['user_id']}")
-        print(f"📅 分析时段: {analysis_result['period']}")
-        
-        if analysis_result['total_orders'] == 0:
-            print(f"📝 {analysis_result['message']}")
-            return
-        
-        print(f"📊 订单总数: {analysis_result['total_orders']} 单")
-        print(f"💰 消费总额: ¥{analysis_result['total_amount']:.2f}")
-        print(f"📈 平均每单金额: ¥{analysis_result['avg_order_amount']:.2f}")
-        
-        print(f"\n🔥 频繁购买商品 (购买次数≥2):")
-        if analysis_result['frequent_products']:
-            for i, product in enumerate(analysis_result['frequent_products'], 1):
-                print(f"   {i}. {product['product_name']} (ID: {product['product_id']}) - 购买 {product['purchase_count']} 次")
-        else:
-            print("   暂无频繁购买的商品")
-        
-        print(f"\n📦 偏好商品类别:")
-        if analysis_result['frequent_categories']:
-            for i, category in enumerate(analysis_result['frequent_categories'], 1):
-                print(f"   {i}. {category['category']} - {category['purchase_count']} 次 ({category['percentage']}%)")
-        else:
-            print("   暂无数据")
-        
-        print(f"\n⏰ 最近购买记录:")
-        recent_purchases = analysis_result['purchase_timeline'][-5:]
-        for purchase in recent_purchases:
-            print(f"   📅 {purchase['date']} - ¥{purchase['amount']:.2f} ({purchase['product_count']}件商品)")
-        
-        print("="*60)
-    
     def get_user_list(self, limit=10):
         """获取用户列表"""
         user_ids = set()
@@ -222,7 +180,7 @@ def get_analyzer():
         _analyzer = UserPurchaseAnalyzer()
     return _analyzer
 
-def analyze_user(user_id, start_date="2024-09-01", end_date="2024-12-31"):
+def analyze_user(user_id, start_date="2025-11-01", end_date="2026-01-31"):
     """
     分析用户购买习惯 - 前端调用接口
     
@@ -262,12 +220,15 @@ def analyze_user(user_id, start_date="2024-09-01", end_date="2024-12-31"):
             'message': f'分析过程中出现错误: {str(e)}'
         }
 
-def get_user_summary(user_id, start_date="2024-09-01", end_date="2024-12-31"):
+def get_user_summary(user_id, start_date="2025-11-01", end_date="2026-01-31"):
     """
     获取用户购买摘要信息 - 简化版接口
     
     Returns:
-        dict: 包含基本统计信息的摘要
+        dict: 分析结果，包含以下字段：
+            - avg_order_amount: 平均每单金额
+            - frequent_products: 频繁购买商品列表
+            - frequent_categories: 偏好商品类别列表
     """
     result = analyze_user(user_id, start_date, end_date)
     if result.get('error'):
@@ -275,15 +236,12 @@ def get_user_summary(user_id, start_date="2024-09-01", end_date="2024-12-31"):
     
     return {
         'error': False,
-        'user_id': result['user_id'],
-        'total_orders': result['total_orders'],
-        'total_amount': result['total_amount'],
         'avg_order_amount': result['avg_order_amount'],
-        'top_category': result['frequent_categories'][0]['category'] if result['frequent_categories'] else '无',
-        'top_category_spending': result['category_avg_spending'][0]['avg_spending'] if result['category_avg_spending'] else 0
+        'frequent_products': result['frequent_products'][0]['product_name'] if result['frequent_products'] else '无',
+        'frequent_categories': result['frequent_categories'][0]['category'] if result['frequent_categories'] else '无',
     }
 
-def get_category_spending(user_id, start_date="2024-09-01", end_date="2024-12-31"):
+def get_category_spending(user_id, start_date="2025-11-01", end_date="2026-01-31"):
     """
     获取用户各类商品平均开销 - 专门接口
     
@@ -309,7 +267,7 @@ def get_available_users(limit=20):
     
     return analyzer.get_user_list(limit)
 
-# ============== 命令行接口（可选） ==============
+# ============== 命令行接口（测试用） ==============
 
 def print_analysis_report(analysis_result):
     """打印分析报告（用于命令行调用）"""
@@ -320,7 +278,7 @@ def print_analysis_report(analysis_result):
         return
     
     print("\n" + "="*60)
-    print(f"🛍️  用户购买习惯分析报告")
+    print(f"用户购买习惯分析报告")
     print("="*60)
     
     print(f"👤 用户ID: {analysis_result['user_id']}")
@@ -334,7 +292,7 @@ def print_analysis_report(analysis_result):
     print(f"💰 消费总额: ¥{analysis_result['total_amount']:.2f}")
     print(f"📈 平均每单金额: ¥{analysis_result['avg_order_amount']:.2f}")
     
-    print(f"\n🔥 频繁购买商品 (购买次数≥4):")
+    print(f"\n🔥 频繁购买商品 (购买次数≥3):")
     if analysis_result['frequent_products']:
         for i, product in enumerate(analysis_result['frequent_products'], 1):
             print(f"   {i}. {product['product_name']} (ID: {product['product_id']}) - 购买 {product['purchase_count']} 次")
