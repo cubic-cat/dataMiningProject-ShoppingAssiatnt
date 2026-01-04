@@ -23,7 +23,7 @@ class ProductRecommendationAPI:
         Args:
             api_key: 通义千问API密钥
         """
-        self.api_key = api_key or 'sk-d5dc87f4360f4134ac60bb65de4d46a2'
+        self.api_key = api_key or 'YOUR-API-KEY'
         self.api_url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
 
         # 数据目录（相对于本文件）
