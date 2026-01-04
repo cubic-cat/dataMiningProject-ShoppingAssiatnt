@@ -25,15 +25,21 @@ class ProductRecommendationAPI:
         """
         self.api_key = api_key or 'sk-d5dc87f4360f4134ac60bb65de4d46a2'
         self.api_url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
-        
-        # 初始化用户购买习惯分析器
+
+        # 数据目录（相对于本文件）
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        data_dir = os.path.join(base_dir, "data")
+
+        # 初始化用户购买习惯分析器（使用相对路径，兼容不同开发环境）
+        purchase_data_path = os.path.join(data_dir, "user_purchase_data.csv")
+        product_data_path = os.path.join(data_dir, "product_data.csv")
         self.user_analyzer = UserPurchaseAnalyzer(
-            purchase_data_path="/Users/afonsoyi/CodeBuddy/Shopping Assistant/data/user_purchase_data.csv",
-            product_data_path="/Users/afonsoyi/CodeBuddy/Shopping Assistant/data/product_data.csv"
+            purchase_data_path=purchase_data_path,
+            product_data_path=product_data_path
         )
-        
-        # 加载商品关联数据
-        self.category_associations = self._load_category_associations()
+
+        # 加载商品关联数据（相对路径）
+        self.category_associations = self._load_category_associations(data_dir)
         
         # 送礼对象选项
         self.gift_recipients = {
@@ -43,7 +49,7 @@ class ProductRecommendationAPI:
             "父母": "送给父母"
         }
     
-    def _load_category_associations(self) -> List[Dict]:
+    def _load_category_associations(self, data_dir: Optional[str] = None) -> List[Dict]:
         """
         加载商品种类关联数据
         
@@ -51,13 +57,20 @@ class ProductRecommendationAPI:
             关联数据列表
         """
         associations = []
-        associations_path = "/Users/afonsoyi/CodeBuddy/Shopping Assistant/data/category_associations.csv"
-        
+        # determine data_dir: use provided or default relative data folder
+        if not data_dir:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            data_dir = os.path.join(base_dir, "data")
+        associations_path = os.path.join(data_dir, "category_associations.csv")
+
         try:
             with open(associations_path, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
                 associations = list(reader)
             print(f"✅ 成功加载 {len(associations)} 条商品种类关联数据")
+        except FileNotFoundError:
+            # File missing is acceptable; return empty list but warn
+            print(f"⚠️ 关联数据文件未找到（期望路径）：{associations_path}")
         except Exception as e:
             print(f"⚠️ 加载关联数据失败: {e}")
         
@@ -157,7 +170,7 @@ class ProductRecommendationAPI:
 用户信息：
 - 预算：{budget_info}
 - 送礼对象：{self.gift_recipients[recipient]}
-- 对象补充信息：{recipient_info if recipient != '自己' else '无'}
+- 对象补充信息：{recipient_info}
 - 具体需求：{requirement}
 
 请你：
@@ -230,9 +243,37 @@ class ProductRecommendationAPI:
         }
         
         try:
-            response = requests.post(self.api_url, headers=headers, json=data, timeout=30)
+            # 尊重环境代理设置（HTTP_PROXY / HTTPS_PROXY）, 并支持重试机制
+            http_proxy = os.environ.get('HTTP_PROXY') or os.environ.get('http_proxy')
+            https_proxy = os.environ.get('HTTPS_PROXY') or os.environ.get('https_proxy')
+            proxies = {}
+            if http_proxy:
+                proxies['http'] = http_proxy
+            if https_proxy:
+                proxies['https'] = https_proxy
+
+            # 使用 Session 并添加简单的重试策略以提高稳定性
+            session = requests.Session()
+            try:
+                # urllib3 Retry for transient network errors
+                from requests.adapters import HTTPAdapter
+                from urllib3.util.retry import Retry
+                retry_strategy = Retry(
+                    total=3,
+                    status_forcelist=[429, 500, 502, 503, 504],
+                    allowed_methods=["HEAD", "GET", "OPTIONS", "POST"],
+                    backoff_factor=1
+                )
+                adapter = HTTPAdapter(max_retries=retry_strategy)
+                session.mount("https://", adapter)
+                session.mount("http://", adapter)
+            except Exception:
+                # 如果缺少 urllib3 的某些组件，仍然继续使用默认 session
+                pass
+
+            response = session.post(self.api_url, headers=headers, json=data, timeout=30, proxies=proxies or None)
             response.raise_for_status()
-            
+
             result = response.json()
             
             # 处理通义千问API的返回格式
@@ -260,6 +301,23 @@ class ProductRecommendationAPI:
                     "error": f"API返回格式异常: {result}"
                 }
                 
+        except requests.exceptions.SSLError as e:
+            # 常见于代理/证书/中间人拦截导致的 TLS 断开
+            hint = ("SSL 错误：无法建立安全连接。常见原因：系统或公司代理拦截 TLS、"
+                    "环境变量 HTTP_PROXY/HTTPS_PROXY 配置错误、或目标主机被网络策略阻断。"
+                    "解决方法示例：在运行环境中设置 NO_PROXY=dashscope.aliyuncs.com 以绕过代理，"
+                    "或正确配置代理地址和证书。")
+            return {
+                "success": False,
+                "error": f"API请求失败 (SSL): {str(e)}; 提示: {hint}"
+            }
+        except requests.exceptions.ProxyError as e:
+            hint = ("代理错误：无法连接到上游代理。请检查 HTTP_PROXY/HTTPS_PROXY 环境变量、"
+                    "代理凭证以及代理服务器的可达性；或设置 NO_PROXY 跳过代理。")
+            return {
+                "success": False,
+                "error": f"API请求失败 (Proxy): {str(e)}; 提示: {hint}"
+            }
         except requests.exceptions.RequestException as e:
             return {
                 "success": False,
