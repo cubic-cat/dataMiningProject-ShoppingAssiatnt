@@ -926,7 +926,7 @@ def create_app():
 
 def main():
     """主函数"""
-    print("🎁 智能商品推荐系统 (美化版)")
+    print("🎁 智能商品推荐系统")
     print("=" * 50)
 
     if not FLASK_AVAILABLE:
